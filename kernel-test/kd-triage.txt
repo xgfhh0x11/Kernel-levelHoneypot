@@ -1,0 +1,35 @@
+Kernel-levelHoneypot / FakeNetFilter.sys -- kd command reference
+================================================================
+Run in the kd session attached to the guest (kd -k net:port=<PORT>,key=<KEY>).
+Lines beginning with ">" are typed at the kd prompt.
+
+--- attach / sanity ---
+> .reload
+> vertarget                       ; confirm this is the DISPOSABLE guest
+> lm m FakeNetFilter              ; is the driver loaded?
+
+--- Driver Verifier (in guest console, then reboot, before load) ---
+  verifier /standard /driver FakeNetFilter.sys
+> !verifier 3 FakeNetFilter.sys
+
+--- after a bugcheck ---
+> !analyze -v
+> kb
+> !devobj FakeNetFilter           ; device object / queue state
+> !irp <addr>                     ; inspect a pending IRP (from !analyze)
+> !pool <addr>                    ; pool block triage
+
+--- confirm the EXPORT_LOGS buffered-IOCTL fix ---
+  smoke-test.ps1 issues IOCTL_HONEYPOT_EXPORT_LOGS. Before the fix the handler
+  only ran under Irp->MdlAddress (always NULL for METHOD_BUFFERED) and no-opped
+  while returning success. Confirm the export path now actually executes (log
+  file written / status reflects real work), not a silent success.
+
+--- do NOT enable inline hooks ---
+  InstallInlineHook / HookedNtOpenProcess are experimental and NOT WIRED; their
+  stubs never chain to the original syscall. If you see them installed, the
+  guest will hang -- revert to the checkpoint.
+
+--- resume / detach ---
+> g
+> qd
