@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{D6F1B3A0-0A22-4F5E-9C71-5B7C1E3E2A11}</ProjectGuid>
+    <TemplateGuid>{B53146FA-082D-40E4-9923-0E0006B067EF}</TemplateGuid>
+    <Keyword>KMDriver</Keyword>
+    <RootNamespace>FakeNetFilter</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>FakeNetFilter</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup>
+    <WDKRoot Condition="'$(WDKRoot)'==''">C:\Program Files (x86)\Windows Kits\10</WDKRoot>
+    <WDKVersion Condition="'$(WDKVersion)'==''">10.0.26100.0</WDKVersion>
+    <WDKBuildRoot Condition="'$(WDKBuildRoot)'==''">$(WDKRoot)\build\$(WDKVersion)\</WDKBuildRoot>
+    <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)'==''">10.0.26100.0</WindowsTargetPlatformVersion>
+    <SkipValidateNTTargetVersion>true</SkipValidateNTTargetVersion>
+    <MatchingSdkPresent>true</MatchingSdkPresent>
+    <MatchingWdkPresent>true</MatchingWdkPresent>
+  </PropertyGroup>
+  <Import Project="$(WDKBuildRoot)WindowsDriver.common.props" Condition="exists('$(WDKBuildRoot)WindowsDriver.common.props')" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>WDM</DriverType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <TargetVersion>Windows10</TargetVersion>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>WDM</DriverType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <SolutionDir Condition="'$(SolutionDir)'==''">$(MSBuildProjectDirectory)\..\</SolutionDir>
+    <OutDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\</IntDir>
+    <TargetName>FakeNetFilter</TargetName>
+    <TargetExt>.sys</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WppEnabled>false</WppEnabled>
+      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>DBG=1;_AMD64_=1;AMD64=1;_KERNEL_MODE=1;WINNT=1;_WIN32_WINNT=0x0A00;NTDDI_VERSION=0x0A00000C;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WppEnabled>false</WppEnabled>
+      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_AMD64_=1;AMD64=1;_KERNEL_MODE=1;WINNT=1;_WIN32_WINNT=0x0A00;NTDDI_VERSION=0x0A00000C;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="FakeNetFilter.c" />
+    <ClCompile Include="ControlLayer.c" />
+    <ClCompile Include="DeceptionLayer.c" />
+    <ClCompile Include="DetectionLayer.c" />
+    <ClCompile Include="ExtractionLayer.c" />
+    <ClCompile Include="LoggingLayer.c" />
+    <ClCompile Include="TriggerLayer.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FakeNetFilter.h" />
+    <ClInclude Include="ControlLayer.h" />
+    <ClInclude Include="DeceptionLayer.h" />
+    <ClInclude Include="DetectionLayer.h" />
+    <ClInclude Include="ExtractionLayer.h" />
+    <ClInclude Include="LoggingLayer.h" />
+    <ClInclude Include="TriggerLayer.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <PropertyGroup>
+    <LinkerPath>$(WDKRoot)\bin\x64\link.exe</LinkerPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Link>
+      <SubSystem>Native</SubSystem>
+      <Driver>Driver</Driver>
+      <AdditionalOptions>/ENTRY:GsDriverEntry /SUBSYSTEM:NATIVE,6.00 /DRIVER:WDM %(AdditionalOptions)</AdditionalOptions>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Link>
+      <SubSystem>Native</SubSystem>
+      <Driver>Driver</Driver>
+      <AdditionalOptions>/ENTRY:GsDriverEntry /SUBSYSTEM:NATIVE,6.00 /DRIVER:WDM %(AdditionalOptions)</AdditionalOptions>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(WDKBuildRoot)WindowsDriver.common.targets" Condition="exists('$(WDKBuildRoot)WindowsDriver.common.targets')" />
+  <Target Name="ValidateNTTargetVersion" Condition="'$(SkipValidateNTTargetVersion)' != 'true'" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

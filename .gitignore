@@ -1,0 +1,44 @@
+# Build outputs
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+*.sys
+*.dll
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.sln.docstates
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build directories
+x64/
+x86/
+Release/
+Debug/
+Build/
+
+# WDK
+*.wdf
+*.wdm
+
+# Logs
+*.log
+*.enc
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Python (tests/)
+__pycache__/
+*.pyc
+.pytest_cache/
+

@@ -1,0 +1,53 @@
+#pragma once
+
+#include <windows.h>
+#include <winioctl.h>
+
+// IOCTL codes (must match kernel driver)
+#define IOCTL_HONEYPOT_HANDSHAKE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HONEYPOT_GET_STATS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HONEYPOT_GET_LOGS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HONEYPOT_RELOAD_CONFIG CTL_CODE(FILE_DEVICE_UNKNOWN, 0x803, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_HONEYPOT_EXPORT_LOGS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x804, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+// Handshake constants
+#define HANDSHAKE_SECRET_SIZE 32
+#define SESSION_ID_SIZE 16
+#define APP_VERSION_MAJOR 1
+#define APP_VERSION_MINOR 0
+#define APP_VERSION ((APP_VERSION_MAJOR << 16) | APP_VERSION_MINOR)
+
+#define DEVICE_NAME L"\\\\.\\FakeNetFilter"
+
+// Handshake structures
+typedef struct _HONEYPOT_HANDSHAKE_REQUEST {
+    UCHAR Secret[HANDSHAKE_SECRET_SIZE];
+    ULONG Version;
+} HONEYPOT_HANDSHAKE_REQUEST, * PHONEYPOT_HANDSHAKE_REQUEST;
+
+typedef struct _HONEYPOT_HANDSHAKE_RESPONSE {
+    UCHAR SessionId[SESSION_ID_SIZE];
+    ULONG Status;
+    ULONG DriverVersion;
+} HONEYPOT_HANDSHAKE_RESPONSE, * PHONEYPOT_HANDSHAKE_RESPONSE;
+
+// Statistics structure
+typedef struct _HONEYPOT_STATISTICS {
+    ULONG64 TotalSyscallsLogged;
+    ULONG64 SuspiciousSyscallsDetected;
+    ULONG64 DeceptionCount;
+    ULONG64 FakeObjectAccessCount;
+    ULONG64 PayloadsAnalyzed;
+    ULONG64 ExploitsDetected;
+    ULONG64 TotalLogEntries;
+    ULONG64 EncryptedExports;
+} HONEYPOT_STATISTICS, * PHONEYPOT_STATISTICS;
+
+// Function declarations
+HANDLE OpenHoneyPotDevice(VOID);
+VOID CloseHoneyPotDevice(HANDLE hDevice);
+BOOL PerformHandshake(HANDLE hDevice, PUCHAR SessionId);
+BOOL GetHoneyPotStatistics(HANDLE hDevice, PHONEYPOT_STATISTICS Stats);
+BOOL ExportLogs(HANDLE hDevice, LPCWSTR FilePath);
+BOOL ReloadConfiguration(HANDLE hDevice);
+

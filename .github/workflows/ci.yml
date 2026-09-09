@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# The kernel driver (FakeNetFilter + the six layers) needs a WDK and a
+# privileged test-signing VM to load, so it is not built here. CI builds
+# and smoke-tests the user-mode control app and checks repo structure.
+jobs:
+  usermode-and-structure:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build user-mode control app
+        shell: cmd
+        working-directory: UserModeApp
+        run: cl /W3 /Fe:HoneyPotControl.exe HoneyPotControl.c /link kernel32.lib user32.lib
+
+      - name: Smoke-test CLI (help works without the driver)
+        shell: cmd
+        working-directory: UserModeApp
+        run: HoneyPotControl.exe help
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements.txt
+
+      - name: Run pytest
+        run: python -m pytest tests/ -v
