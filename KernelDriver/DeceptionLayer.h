@@ -69,5 +69,5 @@ NTSTATUS CreateFakeMemoryRegion(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG 
 PFAKE_EPROCESS FindFakeProcess(ULONG_PTR ProcessId);
 PFAKE_ETHREAD FindFakeThread(ULONG_PTR ThreadId);
 PFAKE_MEMORY_REGION FindFakeMemoryRegion(ULONG_PTR BaseAddress, ULONG_PTR ProcessId);
-VOID UpdateFakeStructures(VOID); // Anti-fingerprint mechanism
+VOID UpdateFakeStructures(VOID); // Anti-fingerprint mechanism -- NOT CURRENTLY INVOKED, no timer/DPC calls it (see DeceptionLayer.c)
 

@@ -43,11 +43,11 @@ NTSTATUS DeviceIoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
         }
 
         case IOCTL_HONEYPOT_GET_STATS: {
+            // METHOD_BUFFERED: SystemBuffer is the only valid buffer here
+            // (Irp->MdlAddress is never set for METHOD_BUFFERED requests --
+            // see the EXPORT_LOGS case below for the bug that pattern caused).
             PHONEYPOT_STATISTICS stats = (PHONEYPOT_STATISTICS)Irp->AssociatedIrp.SystemBuffer;
-            if (Irp->MdlAddress) {
-                stats = (PHONEYPOT_STATISTICS)MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-            }
-            
+
             if (stats && ioStack->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(HONEYPOT_STATISTICS)) {
                 // Fill statistics from global state
                 stats->TotalSyscallsLogged = g_HoneyPotState.DetectionState.TotalSyscallsLogged;
@@ -78,16 +78,28 @@ NTSTATUS DeviceIoControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             break;
 
         case IOCTL_HONEYPOT_EXPORT_LOGS: {
-            PUNICODE_STRING filePath = NULL;
-            if (Irp->MdlAddress) {
-                PWCHAR pathBuffer = (PWCHAR)MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
-                if (pathBuffer) {
-                    UNICODE_STRING path;
-                    path.Buffer = pathBuffer;
-                    path.Length = (USHORT)(wcslen(pathBuffer) * sizeof(WCHAR));
-                    path.MaximumLength = path.Length;
-                    status = ExportLogsToFile(&path);
-                }
+            // This IOCTL is declared METHOD_BUFFERED (see ControlLayer.h), so
+            // the I/O manager never populates Irp->MdlAddress -- that field is
+            // exclusive to METHOD_IN_DIRECT/METHOD_OUT_DIRECT. The buffered
+            // path (like HANDSHAKE/GET_STATS above) must read the path string
+            // from Irp->AssociatedIrp.SystemBuffer instead.
+            ULONG inputLength = ioStack->Parameters.DeviceIoControl.InputBufferLength;
+            PWCHAR pathBuffer = (PWCHAR)Irp->AssociatedIrp.SystemBuffer;
+
+            if (pathBuffer && inputLength >= sizeof(WCHAR)) {
+                UNICODE_STRING path;
+                SIZE_T maxChars = inputLength / sizeof(WCHAR);
+
+                // Ensure the buffer is NUL-terminated within the bytes the
+                // caller actually supplied before trusting wcslen() on it.
+                pathBuffer[maxChars - 1] = L'\0';
+
+                path.Buffer = pathBuffer;
+                path.Length = (USHORT)(wcslen(pathBuffer) * sizeof(WCHAR));
+                path.MaximumLength = (USHORT)inputLength;
+                status = ExportLogsToFile(&path);
+            } else {
+                status = STATUS_INVALID_PARAMETER;
             }
             break;
         }

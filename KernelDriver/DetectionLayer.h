@@ -69,6 +69,6 @@ NTSTATUS InitializeDetectionLayer(VOID);
 VOID CleanupDetectionLayer(VOID);
 NTSTATUS LogSyscall(SYSCALL_TYPE SyscallType, ULONG_PTR ProcessId, ULONG_PTR ThreadId, ULONG_PTR ReturnAddress, PULONG_PTR Parameters);
 NTSTATUS CaptureStackFingerprint(PUCHAR Buffer, ULONG BufferSize, PULONG CapturedSize);
-NTSTATUS TrackMemoryAccess(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG Protection, ULONG_PTR ProcessId);
+NTSTATUS TrackMemoryAccess(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG Protection, ULONG_PTR ProcessId); // NOT CURRENTLY INVOKED, see DetectionLayer.c
 BOOLEAN AnalyzeSuspiciousBehavior(PSYSCALL_LOG_ENTRY Entry);
 

@@ -64,10 +64,18 @@ VOID CleanupLoggingLayer(VOID)
     
     DbgPrint("[LoggingLayer] Cleaning up...\n");
     
-    // Export logs before cleanup
+    // Export logs before cleanup. Path matches CONFIG_FILE_PATH's
+    // C:\Release\ convention (ControlLayer.h) -- this used to hardcode
+    // \SystemRoot\Release\ (= C:\Windows\Release\), a third, different path
+    // that made ZwCreateFile fail silently on install layouts using the
+    // documented C:\Release\ directory.
     if (state->LogCount > 0) {
-        UNICODE_STRING exportPath = RTL_CONSTANT_STRING(L"\\SystemRoot\\Release\\honeypot_logs.enc");
-        ExportLogsToFile(&exportPath);
+        NTSTATUS exportStatus;
+        UNICODE_STRING exportPath = RTL_CONSTANT_STRING(L"\\??\\C:\\Release\\honeypot_logs.enc");
+        exportStatus = ExportLogsToFile(&exportPath);
+        if (!NT_SUCCESS(exportStatus)) {
+            DbgPrint("[LoggingLayer] Unload-time log export failed: 0x%08X\n", exportStatus);
+        }
     }
     
     if (state->LogBuffer) {

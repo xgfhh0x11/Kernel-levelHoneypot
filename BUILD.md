@@ -32,7 +32,7 @@
 1. Open "x64 Native Tools Command Prompt for VS 2019/2022"
 2. Navigate to project directory:
    ```cmd
-   cd C:\Users\tylersec\Desktop\Kernel-levelHoneypot\KernelDriver
+   cd KernelDriver
    ```
 3. Build using MSBuild:
    ```cmd

@@ -4,6 +4,16 @@
 
 This kernel-level honeypot system implements a multi-layered architecture designed to detect, deceive, and analyze attacker behavior at the Windows kernel level (Ring 0).
 
+> **Status note:** this document describes the intended design of all six
+> layers. As shipped, the Trigger-layer inline hooks are **not wired up**
+> (`InitializeTriggerLayer()` never calls `InstallInlineHook()`), so the
+> Detection/Extraction pipeline they would feed currently has no live data
+> path, "Automatic Export" and the Deception layer's "Anti-Fingerprint
+> Mechanism" are not attached to any timer, and several Extraction-layer
+> analysis functions have no call sites in the driver. Each affected
+> section below is flagged accordingly. See README.md "Limitations" and
+> `BUILD_AND_VERIFY.md` for details.
+
 ## Pipeline Flow
 
 ```
@@ -19,14 +29,19 @@ This kernel-level honeypot system implements a multi-layered architecture design
 **Components**:
 - **Fake Device Driver** (`FakeNetFilter.sys`): Appears as a legitimate network filter driver
 - **Fake Registry Keys**: Creates `HKLM\SYSTEM\FakeService` to attract registry scanners
-- **Passive Inline Hooks**: Hooks critical syscalls:
+- **Passive Inline Hooks** (⚠️ experimental, not wired up -- see status note
+  above): implemented to hook critical syscalls, but never installed by
+  `InitializeTriggerLayer()`:
   - `NtOpenProcess`: Intercepts process handle requests
   - `ZwQuerySystemInformation`: Intercepts system information queries
 
-**Hook Strategy**: 
+**Hook Strategy** (as designed; not currently active):
 - Uses passive inline hooks (not SSDT hooks to avoid detection)
 - Modifies function prologue with JMP instruction
-- Preserves original functionality while logging
+- Preserves original functionality while logging -- **not actually true of
+  the current stubs**: `HookedNtOpenProcess` never calls through to the
+  real `NtOpenProcess`, so wiring this up as-is would break real
+  process-handle opens system-wide (see `TriggerLayer.c`).
 
 **Files**:
 - `TriggerLayer.h` / `TriggerLayer.c`
@@ -67,12 +82,16 @@ This kernel-level honeypot system implements a multi-layered architecture design
   - Fake PEB addresses (non-canonical)
 - **Fake ETHREAD Objects**: Creates fake thread structures
 - **Fake Memory Layout**: Creates fake memory regions with non-canonical addresses
-- **Anti-Fingerprint Mechanism**: Periodically updates fake structures to avoid detection
+- **Anti-Fingerprint Mechanism**: `UpdateFakeStructures()` implements periodic
+  fake-structure mutation, but ⚠️ it is not currently invoked by any
+  timer/DPC/work-item -- it will not run unless something calls it.
 
 **Deception Strategy**:
-- When attacker queries fake process → Returns fake handle
+- When attacker queries fake process → Returns fake handle (requires the
+  Trigger-layer hooks to be wired up first -- see status note above)
 - When attacker queries system info → Returns fake process list
-- Fake structures change over time (anti-fingerprint)
+- Fake structures change over time (anti-fingerprint) -- ⚠️ not active yet,
+  see `UpdateFakeStructures()` above
 
 **Files**:
 - `DeceptionLayer.h` / `DeceptionLayer.c`
@@ -89,8 +108,13 @@ This kernel-level honeypot system implements a multi-layered architecture design
   - Stack hash (SHA-256)
   - Process/Thread IDs
   - Entry data
-- **AES-XTS Encryption**: Encrypts logs before export
-- **Automatic Export**: Exports encrypted logs to file periodically
+- **AES-XTS Encryption**: Encrypts logs before export (currently a documented
+  XOR placeholder, see `LoggingLayer.c`)
+- **Automatic Export**: `LogEntry()` sets an `ExportPending` flag once the
+  configured interval elapses, but ⚠️ nothing polls that flag -- there is
+  no timer/DPC in this driver, so periodic export does not happen today.
+  `IOCTL_HONEYPOT_EXPORT_LOGS` (on-demand export) and the unload-time flush
+  in `CleanupLoggingLayer()` are the two paths that actually run.
 
 **Log Entry Types**:
 - `LogEntrySyscall`: Syscall invocations
@@ -105,6 +129,12 @@ This kernel-level honeypot system implements a multi-layered architecture design
 ### 5. Extraction Layer (Data Extraction & Analysis)
 
 **Purpose**: Analyze attacker's technical capabilities and tools.
+
+⚠️ **Status**: `DisassemblePayload`, `AnalyzeHeapSpray`, `AnalyzeROPChain`,
+`AnalyzeSyscallAbuse`, and `ClassifyBehavior` have no call sites in this
+driver today -- there is no live path feeding them attacker data until the
+Trigger-layer hooks (§1) are wired up. They are implemented and tested only
+at the level of "compiles and is internally correct," not exercised.
 
 **Components**:
 - **Payload Disassembler**: Analyzes shellcode/payloads
@@ -164,6 +194,9 @@ This kernel-level honeypot system implements a multi-layered architecture design
 
 ## Data Flow Example
 
+⚠️ This is the *intended* flow once the Trigger-layer hooks (§1) are wired
+up. As shipped, step 2 does not happen, so steps 3-7 never run.
+
 1. **Attacker** calls `NtOpenProcess` to open a process
 2. **Trigger Layer** hook intercepts the call
 3. **Detection Layer** logs the syscall with stack fingerprint
@@ -212,5 +245,7 @@ This kernel-level honeypot system implements a multi-layered architecture design
 2. **Basic Disassembler**: Limited disassembly capabilities
 3. **No CNN**: Behavior classification uses heuristics only
 4. **No SPI**: Hardware integration not implemented
-5. **Limited Hooks**: Only a few syscalls hooked (expandable)
+5. **Hooks not wired up**: hook implementations exist for a small syscall
+   set (expandable in principle), but `InitializeTriggerLayer()` never
+   installs them -- see the status note at the top of this document
 

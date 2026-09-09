@@ -22,10 +22,17 @@ NTSTATUS InitializeTriggerLayer(VOID)
         DbgPrint("[TriggerLayer] Failed to create fake registry key: 0x%08X\n", status);
     }
     
-    // Install inline hooks (passive hooks)
-    // Note: In real implementation, we'd resolve these from ntdll.dll exports
-    // For now, we'll use placeholder addresses that would be resolved at runtime
-    
+    // EXPERIMENTAL / NOT WIRED: inline syscall hooking is implemented below
+    // (InstallInlineHook / HookedNtOpenProcess / HookedZwQuerySystemInformation)
+    // but InitializeTriggerLayer() deliberately never calls InstallInlineHook.
+    // Resolving NtOpenProcess/ZwQuerySystemInformation addresses and wiring
+    // the hooks up requires a privileged test VM to validate safely -- the
+    // hook stubs as written do not call through to the original function
+    // (see the comments on HookedNtOpenProcess below), so installing them
+    // as-is would break every real process-handle-open on the system. This
+    // driver currently observes nothing; see README.md / ARCHITECTURE.md
+    // for the honest status of this feature.
+
     state->Initialized = TRUE;
     DbgPrint("[TriggerLayer] Initialized successfully\n");
     
@@ -98,6 +105,13 @@ NTSTATUS CreateFakeRegistryKey(PUNICODE_STRING KeyPath, PUNICODE_STRING ValueNam
     return STATUS_SUCCESS;
 }
 
+// EXPERIMENTAL / NOT WIRED: no call sites anywhere in this driver.
+// InitializeTriggerLayer() (see above) does not call this function, so the
+// entire inline-hook pipeline is dead code in the shipped driver. Do not
+// wire this up without first fixing HookedNtOpenProcess /
+// HookedZwQuerySystemInformation to call through to the original function
+// and without cross-CPU synchronization (this only patches the current
+// core); see BUILD_AND_VERIFY.md for the full list of prerequisites.
 NTSTATUS InstallInlineHook(PVOID TargetFunction, PVOID HookFunction, PCHAR FunctionName)
 {
     PTRIGGER_LAYER_STATE state = &g_HoneyPotState.TriggerState;
@@ -193,8 +207,19 @@ NTSTATUS RemoveInlineHook(PVOID TargetFunction)
     return STATUS_SUCCESS;
 }
 
-// Hook function implementations
-NTSTATUS HookedNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, 
+// Hook function implementations.
+//
+// EXPERIMENTAL / NOT WIRED: never installed (InstallInlineHook has no call
+// sites), never invoked except by their own header declaration. This stub
+// also never calls the real NtOpenProcess -- it always returns
+// STATUS_SUCCESS with either a fake handle or (for non-fake targets) no
+// handle at all. If this were hooked in as-is, every real process-handle
+// request on the system (Task Manager, AV, the test harness itself) would
+// get a broken/fake handle instead of the real one, which would hang or
+// crash a live test VM almost immediately. A real trampoline that preserves
+// the original bytes and calls through for non-deception-target requests
+// is required before this can ever be wired up.
+NTSTATUS HookedNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId)
 {
     PTRIGGER_LAYER_STATE state = &g_HoneyPotState.TriggerState;
@@ -227,7 +252,9 @@ NTSTATUS HookedNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
     return STATUS_SUCCESS;
 }
 
-NTSTATUS HookedZwQuerySystemInformation(SYSTEM_INFORMATION_CLASS SystemInformationClass, 
+// EXPERIMENTAL / NOT WIRED: same status as HookedNtOpenProcess above -- never
+// installed, never called through to the real ZwQuerySystemInformation.
+NTSTATUS HookedZwQuerySystemInformation(SYSTEM_INFORMATION_CLASS SystemInformationClass,
                                         PVOID SystemInformation, ULONG SystemInformationLength, 
                                         PULONG ReturnLength)
 {

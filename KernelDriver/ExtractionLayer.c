@@ -58,6 +58,9 @@ VOID CleanupExtractionLayer(VOID)
     DbgPrint("[ExtractionLayer] Cleanup complete\n");
 }
 
+// NOT CURRENTLY INVOKED: no call sites anywhere in this driver -- payload
+// capture is not wired to any hook (see TriggerLayer.c). Kept as a
+// library-style function for when a real payload-capture path exists.
 NTSTATUS DisassemblePayload(PVOID PayloadAddress, ULONG PayloadSize, PPAYLOAD_ANALYSIS Analysis)
 {
     PEXTRACTION_LAYER_STATE state = &g_HoneyPotState.ExtractionState;
@@ -87,16 +90,19 @@ NTSTATUS DisassemblePayload(PVOID PayloadAddress, ULONG PayloadSize, PPAYLOAD_AN
     // Detect suspicious instructions (simplified heuristic)
     PUCHAR code = (PUCHAR)PayloadAddress;
     for (i = 0; i < PayloadSize && i < 1024; i++) {
-        // Check for common shellcode patterns
+        // Check for common shellcode patterns. code[i+1] is only read when
+        // it is still within PayloadSize -- otherwise the final loop
+        // iteration reads one byte past the buffer (possible page-boundary
+        // fault in kernel mode).
         if (code[i] == 0xE8 || code[i] == 0xE9 || // CALL/JMP
-            (code[i] == 0xFF && (code[i+1] & 0x30) == 0x10)) { // CALL reg
+            (code[i] == 0xFF && (i + 1 < PayloadSize) && (code[i+1] & 0x30) == 0x10)) { // CALL reg
             suspiciousCount++;
         }
     }
-    
+
     Analysis->SuspiciousInstructionCount = suspiciousCount;
     Analysis->IsShellcode = (suspiciousCount > PayloadSize / 10);
-    Analysis->IsPacked = (PayloadSize > 0 && code[0] == 0x4D && code[1] == 0x5A); // MZ header check
+    Analysis->IsPacked = (PayloadSize > 1 && code[0] == 0x4D && code[1] == 0x5A); // MZ header check
     
     state->PayloadsAnalyzed++;
     
@@ -106,40 +112,53 @@ NTSTATUS DisassemblePayload(PVOID PayloadAddress, ULONG PayloadSize, PPAYLOAD_AN
     return STATUS_SUCCESS;
 }
 
-NTSTATUS FingerprintExploit(PVOID PatternAddress, ULONG PatternSize, EXPLOIT_TYPE ExploitType, 
+NTSTATUS FingerprintExploit(PVOID PatternAddress, ULONG PatternSize, EXPLOIT_TYPE ExploitType,
                             PEXPLOIT_FINGERPRINT Fingerprint)
 {
     PEXTRACTION_LAYER_STATE state = &g_HoneyPotState.ExtractionState;
+    PEXPLOIT_FINGERPRINT stored;
     KIRQL oldIrql;
-    
+
     if (state->ExploitPatternCount >= MAX_EXPLOIT_PATTERNS) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
+
     KeAcquireSpinLock(&state->ExploitPatternLock, &oldIrql);
-    
-    Fingerprint = &state->ExploitPatterns[state->ExploitPatternCount];
-    
-    Fingerprint->ExploitType = ExploitType;
-    Fingerprint->PatternSize = PatternSize;
-    Fingerprint->PatternAddress = (ULONG_PTR)PatternAddress;
-    KeQuerySystemTime(&Fingerprint->DetectionTime);
-    
+
+    stored = &state->ExploitPatterns[state->ExploitPatternCount];
+
+    stored->ExploitType = ExploitType;
+    stored->PatternSize = PatternSize;
+    stored->PatternAddress = (ULONG_PTR)PatternAddress;
+    KeQuerySystemTime(&stored->DetectionTime);
+
     // Calculate pattern hash
-    SimpleSHA256((PUCHAR)PatternAddress, min(PatternSize, 1024), Fingerprint->PatternHash);
-    
-    Fingerprint->IsConfirmed = TRUE;
-    
+    SimpleSHA256((PUCHAR)PatternAddress, min(PatternSize, 1024), stored->PatternHash);
+
+    stored->IsConfirmed = TRUE;
+
     state->ExploitPatternCount++;
     state->ExploitsDetected++;
-    
+
     KeReleaseSpinLock(&state->ExploitPatternLock, oldIrql);
-    
+
+    // Write through to the caller's out-parameter (previously this function
+    // reassigned its own local copy of Fingerprint instead of writing
+    // through the pointer, so every caller's "out" value stayed
+    // uninitialized garbage).
+    if (Fingerprint) {
+        *Fingerprint = *stored;
+    }
+
     DbgPrint("[ExtractionLayer] Fingerprinted exploit type: %lu\n", ExploitType);
-    
+
     return STATUS_SUCCESS;
 }
 
+// NOT CURRENTLY INVOKED: no call sites in this driver (no hook feeds it
+// real memory-region data). Also note: if wired up to attacker-influenced
+// addresses, this raw-dereferences MemoryRegion with no ProbeForRead/SEH --
+// wrap in __try/__except before hooking this up for real.
 NTSTATUS AnalyzeHeapSpray(PVOID MemoryRegion, SIZE_T RegionSize)
 {
     PUCHAR region = (PUCHAR)MemoryRegion;
@@ -172,6 +191,10 @@ NTSTATUS AnalyzeHeapSpray(PVOID MemoryRegion, SIZE_T RegionSize)
     return STATUS_NOT_FOUND;
 }
 
+// NOT CURRENTLY INVOKED: no call sites in this driver. Also note: if wired
+// up to attacker-influenced addresses, this raw-dereferences StackAddress
+// with no ProbeForRead/SEH -- wrap in __try/__except before hooking this up
+// for real.
 NTSTATUS AnalyzeROPChain(PVOID StackAddress, ULONG StackSize)
 {
     PULONG_PTR stack = (PULONG_PTR)StackAddress;
@@ -203,6 +226,7 @@ NTSTATUS AnalyzeROPChain(PVOID StackAddress, ULONG StackSize)
     return STATUS_NOT_FOUND;
 }
 
+// NOT CURRENTLY INVOKED: no call sites in this driver.
 NTSTATUS AnalyzeSyscallAbuse(PSYSCALL_LOG_ENTRY SyscallEntry)
 {
     // Analyze syscall patterns for abuse
@@ -222,6 +246,7 @@ NTSTATUS AnalyzeSyscallAbuse(PSYSCALL_LOG_ENTRY SyscallEntry)
     return STATUS_NOT_FOUND;
 }
 
+// NOT CURRENTLY INVOKED: no call sites in this driver.
 BOOLEAN ClassifyBehavior(PSYSCALL_LOG_ENTRY Entry)
 {
     // Placeholder for CNN-based behavior classification

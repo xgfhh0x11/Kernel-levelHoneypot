@@ -53,10 +53,16 @@ typedef struct _TRIGGER_LAYER_STATE {
 NTSTATUS InitializeTriggerLayer(VOID);
 VOID CleanupTriggerLayer(VOID);
 NTSTATUS CreateFakeRegistryKey(PUNICODE_STRING KeyPath, PUNICODE_STRING ValueName, ULONG ValueType, PVOID ValueData, ULONG ValueDataSize);
+
+// EXPERIMENTAL / NOT WIRED -- see TriggerLayer.c. InstallInlineHook has no
+// call sites in this driver; InitializeTriggerLayer() never installs the
+// hooks below. Do not wire these up without first fixing the hook stubs to
+// call through to the original function (see HookedNtOpenProcess).
 NTSTATUS InstallInlineHook(PVOID TargetFunction, PVOID HookFunction, PCHAR FunctionName);
 NTSTATUS RemoveInlineHook(PVOID TargetFunction);
 
-// Hook functions (passive inline hooks)
+// Hook functions (passive inline hooks) -- EXPERIMENTAL / NOT WIRED, never
+// installed and never called through to the real syscalls. See TriggerLayer.c.
 NTSTATUS HookedNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
 NTSTATUS HookedZwQuerySystemInformation(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 

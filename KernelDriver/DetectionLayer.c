@@ -159,7 +159,10 @@ NTSTATUS CaptureStackFingerprint(PUCHAR Buffer, ULONG BufferSize, PULONG Capture
     return STATUS_SUCCESS;
 }
 
-NTSTATUS TrackMemoryAccess(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG Protection, 
+// NOT CURRENTLY INVOKED: no call sites anywhere in this driver -- memory
+// access is not tracked by any hook (the syscall hooks that would feed this
+// are themselves never installed; see TriggerLayer.c).
+NTSTATUS TrackMemoryAccess(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG Protection,
                           ULONG_PTR ProcessId)
 {
     PDETECTION_LAYER_STATE state = &g_HoneyPotState.DetectionState;

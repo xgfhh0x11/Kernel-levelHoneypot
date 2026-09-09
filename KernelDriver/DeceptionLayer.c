@@ -59,13 +59,17 @@ NTSTATUS CreateFakeProcess(PUNICODE_STRING ImageName, ULONG_PTR ProcessId,
     PDECEPTION_LAYER_STATE state = &g_HoneyPotState.DeceptionState;
     PFAKE_EPROCESS fakeProcess;
     KIRQL oldIrql;
-    
+
+    KeAcquireSpinLock(&state->FakeProcessLock, &oldIrql);
+
+    // Bounds check moved inside the lock: checking-then-acquiring let two
+    // concurrent callers both pass the check before either incremented the
+    // count, overflowing the fixed FakeProcesses[] array.
     if (state->FakeProcessCount >= MAX_FAKE_EPROCESS) {
+        KeReleaseSpinLock(&state->FakeProcessLock, oldIrql);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
-    KeAcquireSpinLock(&state->FakeProcessLock, &oldIrql);
-    
+
     fakeProcess = &state->FakeProcesses[state->FakeProcessCount];
     
     fakeProcess->FakeProcessId = ProcessId;
@@ -104,13 +108,16 @@ NTSTATUS CreateFakeThread(ULONG_PTR ThreadId, ULONG_PTR ProcessId, ULONG_PTR Sta
     PDECEPTION_LAYER_STATE state = &g_HoneyPotState.DeceptionState;
     PFAKE_ETHREAD fakeThread;
     KIRQL oldIrql;
-    
+
+    KeAcquireSpinLock(&state->FakeThreadLock, &oldIrql);
+
+    // See CreateFakeProcess() above: bounds check must happen inside the
+    // lock to avoid a check-then-act race that overflows FakeThreads[].
     if (state->FakeThreadCount >= MAX_FAKE_ETHREAD) {
+        KeReleaseSpinLock(&state->FakeThreadLock, oldIrql);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
-    KeAcquireSpinLock(&state->FakeThreadLock, &oldIrql);
-    
+
     fakeThread = &state->FakeThreads[state->FakeThreadCount];
     fakeThread->FakeThreadId = ThreadId;
     fakeThread->FakeProcessId = ProcessId;
@@ -138,13 +145,16 @@ NTSTATUS CreateFakeMemoryRegion(ULONG_PTR BaseAddress, SIZE_T RegionSize, ULONG 
     PDECEPTION_LAYER_STATE state = &g_HoneyPotState.DeceptionState;
     PFAKE_MEMORY_REGION region;
     KIRQL oldIrql;
-    
+
+    KeAcquireSpinLock(&state->FakeMemoryLock, &oldIrql);
+
+    // See CreateFakeProcess() above: bounds check must happen inside the
+    // lock to avoid a check-then-act race that overflows FakeMemoryRegions[].
     if (state->FakeMemoryRegionCount >= MAX_FAKE_MEMORY_REGIONS) {
+        KeReleaseSpinLock(&state->FakeMemoryLock, oldIrql);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    
-    KeAcquireSpinLock(&state->FakeMemoryLock, &oldIrql);
-    
+
     region = &state->FakeMemoryRegions[state->FakeMemoryRegionCount];
     region->FakeBaseAddress = BaseAddress;
     region->FakeRegionSize = RegionSize;
@@ -234,6 +244,11 @@ PFAKE_MEMORY_REGION FindFakeMemoryRegion(ULONG_PTR BaseAddress, ULONG_PTR Proces
     return region;
 }
 
+// NOT CURRENTLY INVOKED: no timer/DPC/work-item anywhere in this driver
+// calls this function, so the "fake structures change over time"
+// anti-fingerprint claim does not happen at runtime today. Wiring this to
+// a real periodic callback (KeSetTimer + a DPC, or a work item) is future
+// work; see ARCHITECTURE.md.
 VOID UpdateFakeStructures(VOID)
 {
     PDECEPTION_LAYER_STATE state = &g_HoneyPotState.DeceptionState;

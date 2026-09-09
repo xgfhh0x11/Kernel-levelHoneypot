@@ -19,11 +19,11 @@ with attacker code paths beyond observing and redirecting them.
 
 | Layer | Responsibility |
 |---|---|
-| Trigger | Fake device driver, fake registry keys, passive inline hooks on a curated set of syscalls (`NtOpenProcess`, `ZwQuerySystemInformation`). |
-| Detection | Kernel-mode syscall logger; per-call stack fingerprinting; memory-access pattern tracking; RWX-allocation heuristics. |
-| Deception | Synthetic `EPROCESS` / `ETHREAD` objects with non-canonical `PEB` addresses; periodic anti-fingerprint mutation. |
-| Logging | Non-paged-pool ring buffer; AES-XTS encryption (currently a documented placeholder, see `LoggingLayer.c`); periodic export. |
-| Extraction | Payload pattern matching (heap-spray, ROP-chain signatures); per-event classification labels for downstream review. |
+| Trigger | Fake device driver, fake registry keys. Also implements passive inline hooks for a curated syscall set (`NtOpenProcess`, `ZwQuerySystemInformation`), but **these are experimental and not wired up**: `InitializeTriggerLayer()` never calls `InstallInlineHook()`, so the driver as shipped does not hook anything and observes no syscalls. See "Status" below. |
+| Detection | Kernel-mode syscall logger; per-call stack fingerprinting; memory-access pattern tracking; RWX-allocation heuristics. Only reachable once the Trigger-layer hooks above are wired up. |
+| Deception | Synthetic `EPROCESS` / `ETHREAD` objects with non-canonical `PEB` addresses. `UpdateFakeStructures()` (anti-fingerprint mutation) exists but is not currently called by any timer, so fake structures do not change over time yet. |
+| Logging | Non-paged-pool ring buffer; AES-XTS encryption (currently a documented placeholder, see `LoggingLayer.c`). Export is on-demand via IOCTL today; automatic periodic export is not yet wired to a timer. |
+| Extraction | Payload pattern matching (heap-spray, ROP-chain signatures) and classification helpers exist but currently have no call sites -- nothing feeds them data until the Trigger-layer hooks are wired up. |
 | Control | Config parser; per-layer enable/disable; IOCTL surface for user-mode tooling. |
 
 Detailed flow: `ARCHITECTURE.md`.
@@ -78,18 +78,26 @@ operator owns, with test-signing enabled.
 
 ## Limitations
 
-- Hooks are inline on a curated syscall set; full SSDT coverage is out
-  of scope.
+- **Inline hooking is experimental and not wired up.** `InstallInlineHook()`
+  and the `Hooked*` stubs in `TriggerLayer.c` exist but have no active call
+  path in the shipped driver, and the stubs do not call through to the real
+  syscall -- installing them as-is would break real process-handle opens on
+  the system. Hooking is inline on a curated syscall set by design; full
+  SSDT coverage is out of scope regardless.
 - Stack fingerprint / heuristic-based detection produces false positives
-  on legitimate JIT engines and other RWX-using workloads.
+  on legitimate JIT engines and other RWX-using workloads, and is only
+  reachable once the hooks above are wired up.
 - Crypto and disassembly are simplified (see source comments).
-- No automated tests; the driver requires a privileged test environment
-  to exercise.
+- `tests/` (pytest) covers repo structure and the user-mode CLI; there is
+  no automated harness for the kernel driver itself, which requires a
+  privileged test environment to exercise.
 
 ## Status
 
-Research / non-production. Intended for lab and academic study of
-kernel-mode deception techniques.
+Research / non-production. The Trigger/Detection/Extraction pipeline
+described above (inline hooking, exploit fingerprinting) is present in
+source but not wired to run by default -- see "Limitations". Intended for
+lab and academic study of kernel-mode deception techniques.
 
 ## References
 

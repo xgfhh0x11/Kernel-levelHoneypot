@@ -1,9 +1,9 @@
 # Kernel-Mode Deception Framework — Build & Verification
 
-> *Quality gate for the HBO NL portfolio. Complements the existing
-> BUILD.md with acceptance criteria and verification recipe.*
->
-> *Last updated: 2026-05-14 — post P0–P3 fix pass. Critical IOCTL off-by-one resolved.*
+> Complements the existing BUILD.md with acceptance criteria and a
+> verification recipe. This repository is published as a single commit
+> (no incremental history), so this document describes the *current*
+> state of the code rather than a changelog of past fixes.
 
 ## 1. Build
 
@@ -16,10 +16,9 @@
 - **Command** (copy-pastable, from an *x64 Native Tools Command Prompt*):
 
   ```cmd
-  REM 1) Kernel driver — `FakeNetFilter.vcxproj` is committed (post-2026-05-14
-  REM    fix pass), so MSBuild against the WindowsKernelModeDriver10.0
-  REM    toolset Just Works. The legacy WDK `sources` file is still in the
-  REM    tree for `build -cZ` flows.
+  REM 1) Kernel driver — `FakeNetFilter.vcxproj` is committed, so MSBuild
+  REM    against the WindowsKernelModeDriver10.0 toolset Just Works. The
+  REM    legacy WDK `sources` file is still in the tree for `build -cZ` flows.
   cd KernelDriver
   msbuild FakeNetFilter.vcxproj /p:Configuration=Release /p:Platform=x64
 
@@ -44,7 +43,7 @@
 
 - **VS IDE**: open `KernelDriver\FakeNetFilter.vcxproj` for the driver
   and `UserModeApp\HoneyPotControl.vcxproj` for the control app. Both
-  projects are now committed to the repo (see §3.1, fixed 2026-05-14).
+  projects are committed to the repo (see §3.1).
 - **`cl.exe` one-liner for the user-mode app** (no MSBuild required):
   ```cmd
   cd UserModeApp
@@ -74,12 +73,17 @@
 A six-layer kernel-mode honeypot (Trigger → Detection → Deception →
 Logging → Extraction → Control). The driver registers as
 `\Device\FakeNetFilter` with symbolic link `\DosDevices\FakeNetFilter`,
-installs passive inline hooks on `NtOpenProcess` and
-`ZwQuerySystemInformation`, maintains a synthetic process/thread universe,
-and exposes statistics + log export via a small IOCTL surface
-(`0x800-0x804`). `HoneyPotControl.exe` opens `\\.\FakeNetFilter`,
-performs a 32-byte shared-secret handshake, and prints counters or
-triggers a log export.
+maintains a synthetic process/thread universe, and exposes statistics +
+log export via a small IOCTL surface (`0x800-0x804`). `HoneyPotControl.exe`
+opens `\\.\FakeNetFilter`, performs a 32-byte shared-secret handshake, and
+prints counters or triggers a log export.
+
+⚠️ **Inline hooking is implemented but not wired up.** `TriggerLayer.c`
+contains `InstallInlineHook()` and hook stubs for `NtOpenProcess` /
+`ZwQuerySystemInformation`, but `InitializeTriggerLayer()` never calls
+`InstallInlineHook()`, so the driver as built does not hook anything and
+the Detection/Extraction pipeline has no live data path. See §2.2 A6 below
+and README.md "Limitations".
 
 ### 2.2 Acceptance criteria
 
@@ -95,24 +99,34 @@ triggers a log export.
 - [ ] **A4 — Device reachable**: `HoneyPotControl.exe` (no args) opens
       `\\.\FakeNetFilter` and does not print *"Could not connect"*.
 - [ ] **A5 — Handshake passes**: app prints
-      `Handshake successful! Driver version: 1.0`. Kernel side now
-      implements `IOCTL_HONEYPOT_HANDSHAKE = 0x800` end-to-end:
+      `Handshake successful! Driver version: 1.0`. Kernel side implements
+      `IOCTL_HONEYPOT_HANDSHAKE = 0x800` end-to-end:
       `ControlLayer.c:HandleHandshake` validates the 32-byte secret with
       `RtlEqualMemory`, checks major version, and returns a randomised
       16-byte session ID. The dispatcher in
       `FakeNetFilter.c` size-validates request/response buffers before
-      calling through. (Resolved 2026-05-14; see §3.1.)
+      calling through. See §3.1.
 - [ ] **A6 — Statistics readable**: after some activity, the eight
-      `HONEYPOT_STATISTICS` fields print as non-negative integers; at
-      least `TotalSyscallsLogged` is `> 0` after running e.g.
-      `Get-Process` from another shell.
+      `HONEYPOT_STATISTICS` fields print as non-negative integers.
+      ⚠️ `TotalSyscallsLogged` will stay `0` on the current codebase no
+      matter what the "attacker" does: `LogSyscall()` is only reachable
+      from the two `Hooked*` stubs in `TriggerLayer.c`, and those are
+      never installed (see §2.1). This criterion cannot pass until the
+      hooks are wired up; treat "all counters read back as 0, no crash"
+      as the honest current pass condition instead.
 - [ ] **A7 — Log export**: `HoneyPotControl.exe export` produces a file
-      at `C:\Release\honeypot_logs.enc` (or the supplied path).
+      at `C:\Release\honeypot_logs.enc` (or the supplied path). The
+      kernel-side dispatcher reads the target path from
+      `Irp->AssociatedIrp.SystemBuffer` (METHOD_BUFFERED), not
+      `Irp->MdlAddress` (that field is only ever populated for
+      METHOD_IN_DIRECT/METHOD_OUT_DIRECT IOCTLs, so the previous
+      `if (Irp->MdlAddress)` gate never ran and this IOCTL silently
+      no-opped while still reporting `STATUS_SUCCESS`).
 - [ ] **A8 — Config reload**: editing `C:\Release\honey.conf` then
       `HoneyPotControl.exe reload` succeeds and is reflected in
-      subsequent stats. (`ControlLayer.h:CONFIG_FILE_PATH` was realigned
-      to `\??\C:\Release\honey.conf` on 2026-05-14, matching the install
-      step; the previous `\SystemRoot\Release\` path is gone.)
+      subsequent stats. `ControlLayer.h:CONFIG_FILE_PATH` is
+      `\??\C:\Release\honey.conf`, matching the install step in
+      README.md/BUILD.md and the header comment in `config/honey.conf`.
 - [ ] **A9 — Clean unload**: `sc stop FakeNetFilter` succeeds; DbgView
       shows `Cleanup complete` then `Driver unloaded`; no bugcheck.
 
@@ -130,7 +144,7 @@ REM --- install ---
 mkdir C:\Release
 copy KernelDriver\bin\Release\FakeNetFilter.sys C:\Release\
 copy config\honey.conf                          C:\Release\
-REM Post-2026-05-14: the kernel parser reads exactly C:\Release\honey.conf
+REM The kernel parser reads exactly C:\Release\honey.conf
 REM (CONFIG_FILE_PATH = L"\\??\\C:\\Release\\honey.conf"), so the
 REM single copy above is sufficient.
 
@@ -156,7 +170,7 @@ or `windbg -k` for kernel-debug attach. Without one of these the
 
 ### 2.4 Automated verification
 
-**Present (added 2026-06-10).** A `pytest` suite under `tests/` plus a
+**Present.** A `pytest` suite under `tests/` plus a
 GitHub Actions workflow (`.github/workflows/ci.yml`):
 
 - `tests/test_structure.py` — asserts each of the six layers has a
@@ -165,8 +179,8 @@ GitHub Actions workflow (`.github/workflows/ci.yml`):
   source tree and the build can't drift apart).
 - `tests/test_cli_smoke.py` — runs the built `HoneyPotControl.exe help`
   and asserts exit 0 + usage text. `help`/`/?` was moved ahead of the
-  device-open in `wmain` (2026-06-10) so it is answerable without the
-  driver; skips cleanly when the app is not built.
+  device-open in `wmain` so it is answerable without the driver; skips
+  cleanly when the app is not built.
 
 CI builds the user-mode control app with MSVC on `windows-latest`,
 smoke-tests `help`, then runs `pytest`. The kernel driver still needs a
@@ -182,30 +196,22 @@ python -m pytest tests/ -v
 
 ### 3.1 Known fragilities
 
-- ✅ **Driver `.vcxproj` is missing.** ~~The repo ships
-  `UserModeApp\HoneyPotControl.vcxproj` but **no project file for the
-  driver** — only the legacy WDK 7.1-era `sources` file. BUILD.md
-  Method 2 (`msbuild /t:build`) therefore *cannot work as written*.~~
-  **RESOLVED 2026-05-14:** `KernelDriver\FakeNetFilter.vcxproj` is now
-  committed. It targets the `WindowsKernelModeDriver10.0` toolset,
-  enumerates all 7 source files (`FakeNetFilter.c`, `ControlLayer.c`,
-  `DeceptionLayer.c`, `DetectionLayer.c`, `ExtractionLayer.c`,
-  `LoggingLayer.c`, `TriggerLayer.c`) and all 7 headers, sets
-  `TargetName=FakeNetFilter` / `TargetExt=.sys`, and links
-  `ntstrsafe.lib`. BUILD.md Method 2 now works end-to-end.
-- ✅ **Driver filename mismatch across docs.** ~~`README.md` references
-  `krnlhoneypot.sys` in the install snippet, but the actual build output
-  is `FakeNetFilter.sys`.~~ **RESOLVED 2026-05-14:** every
-  `krnlhoneypot.sys` mention in `README.md` was rewritten to
-  `FakeNetFilter.sys`. README, BUILD.md, the new `.vcxproj`, and the
-  `sources` file all agree on the driver name now.
-- ✅ **Handshake is one-sided.** ~~`HoneyPotControl.c` sends
-  `IOCTL_HONEYPOT_HANDSHAKE = 0x800`, but the driver's
-  `DeviceIoControl` switch in `FakeNetFilter.c` has **no case for
-  `0x800`**, and `ControlLayer.h` re-defines `0x800` as
-  `IOCTL_HONEYPOT_GET_STATS` (so two different IOCTLs share the same
-  code).~~ **RESOLVED 2026-05-14 (P0 fix):** `ControlLayer.h` was
-  renumbered to align byte-for-byte with `HoneyPotControl.h`:
+Current status of the code as it stands (not a changelog — see the note at
+the top of this document):
+
+- ✅ **Driver `.vcxproj` is present.** `KernelDriver\FakeNetFilter.vcxproj`
+  targets the `WindowsKernelModeDriver10.0` toolset, enumerates all 7
+  source files (`FakeNetFilter.c`, `ControlLayer.c`, `DeceptionLayer.c`,
+  `DetectionLayer.c`, `ExtractionLayer.c`, `LoggingLayer.c`,
+  `TriggerLayer.c`) and all 7 headers, sets `TargetName=FakeNetFilter` /
+  `TargetExt=.sys`, and links `ntstrsafe.lib`. BUILD.md Method 2 works
+  end-to-end against it.
+- ✅ **Driver filename is consistent across docs.** README, BUILD.md, the
+  `.vcxproj`, and the legacy `sources` file all agree the output is
+  `FakeNetFilter.sys`.
+- ✅ **Handshake IOCTL is implemented and numbered consistently.**
+  `ControlLayer.h` and `HoneyPotControl.h` agree byte-for-byte on the IOCTL
+  table:
   | Code  | User app (`HoneyPotControl.h`) | Kernel (`ControlLayer.h`) |
   |-------|--------------------------------|---------------------------|
   | 0x800 | HANDSHAKE                      | HANDSHAKE ✅              |
@@ -213,33 +219,31 @@ python -m pytest tests/ -v
   | 0x802 | GET_LOGS                       | GET_LOGS ✅               |
   | 0x803 | RELOAD_CONFIG                  | RELOAD_CONFIG ✅          |
   | 0x804 | EXPORT_LOGS                    | EXPORT_LOGS ✅            |
-  Additionally `ControlLayer.h` now exports `HANDSHAKE_SECRET_SIZE`,
-  `SESSION_ID_SIZE`, `KMOD_DRIVER_VERSION`, the
-  `HONEYPOT_HANDSHAKE_REQUEST`/`RESPONSE` structs, the
-  `g_HoneyPotHandshakeSecret` extern, and the `HandleHandshake()`
-  prototype. `ControlLayer.c` defines the matching 32-byte secret
-  (`"KRNLHONEYPOTSECRETKEY12345678901"`) and implements
-  `HandleHandshake()` (constant-size `RtlEqualMemory` check, major-version
-  gate, `RtlRandomEx` session ID seeded by `KeQueryPerformanceCounter`).
-  The dispatcher in `FakeNetFilter.c` now has explicit cases for
-  `IOCTL_HONEYPOT_HANDSHAKE` (with input/output size validation) and
-  `IOCTL_HONEYPOT_GET_LOGS` (returns `STATUS_NOT_IMPLEMENTED` — export
-  remains the supported log-egress path).
-- ✅ **Config path divergence.** ~~`config\honey.conf` documents itself
-  as living at `\SystemRoot\Release\honey.conf` (= `C:\Windows\Release\`),
-  matching `ControlLayer.h:CONFIG_FILE_PATH`. But README/BUILD copy it
-  to `C:\Release\`.~~ **RESOLVED 2026-05-14:**
-  `ControlLayer.h:CONFIG_FILE_PATH` is now
-  `L"\\??\\C:\\Release\\honey.conf"`, matching the install-time `copy`
-  in README/BUILD.md. The `\??\` prefix is the kernel-mode
-  object-manager DOS-namespace prefix, the supported way to address a
-  drive-letter path from `ZwOpenFile`.
+  `ControlLayer.c` defines the matching 32-byte secret
+  (`"KRNLHONEYPOTSECRETKEY12345678901"`) and implements `HandleHandshake()`
+  (constant-size `RtlEqualMemory` check, major-version gate, `RtlRandomEx`
+  session ID seeded by `KeQueryPerformanceCounter`). The dispatcher in
+  `FakeNetFilter.c` has explicit cases for `IOCTL_HONEYPOT_HANDSHAKE` (with
+  input/output size validation) and `IOCTL_HONEYPOT_GET_LOGS` (returns
+  `STATUS_NOT_IMPLEMENTED` — export remains the supported log-egress path).
+  Note: the handshake is a defensive lab gate, not a cryptographic
+  protocol — GET_STATS/EXPORT_LOGS/RELOAD_CONFIG are not actually gated on
+  a prior successful handshake in the dispatcher.
+- ✅ **Config path is consistent.** `ControlLayer.h:CONFIG_FILE_PATH` is
+  `L"\\??\\C:\\Release\\honey.conf"`, matching the install-time `copy` in
+  README/BUILD.md, the header comment in `config/honey.conf`, and the
+  unload-time export path in `LoggingLayer.c`. The `\??\` prefix is the
+  kernel-mode object-manager DOS-namespace prefix, the supported way to
+  address a drive-letter path from `ZwOpenFile`.
+- ⚠️ **Inline hooking is not wired up.** See §2.1/§2.2 A6 above and
+  README.md "Limitations" — `InstallInlineHook()` is never called, so the
+  Trigger/Detection/Extraction pipeline has no live data path today.
 - ⚠️ **Encryption is XOR.** `LoggingLayer.c` ships a documented
   placeholder; the `.enc` extension on exports is aspirational. README
   and ARCHITECTURE.md both call this out.
-- ⚠️ **Inline syscall hooks** modify kernel memory under CR0 toggling;
-  PatchGuard will eventually bugcheck the system on a non-test build.
-  Test-signing alone does **not** disable PatchGuard.
+- ⚠️ **Inline syscall hooks** (if wired up) modify kernel memory under CR0
+  toggling; PatchGuard will eventually bugcheck the system on a non-test
+  build. Test-signing alone does **not** disable PatchGuard.
 - ⚠️ **`/WX` + `/W4`** in the `sources` file means any new compiler
   warning is a build break. Welcome.
 
@@ -266,44 +270,47 @@ python -m pytest tests/ -v
 
 ### 3.3 Roadmap
 
-- **Short-term (≤1 day)** — *all five items below were completed in the
-  2026-05-14 P0–P3 fix pass:*
-  - ✅ Reconcile the IOCTL tables in `HoneyPotControl.h` and
-    `ControlLayer.h`. *(Done: `ControlLayer.h` now holds HANDSHAKE at
-    0x800 through EXPORT_LOGS at 0x804, matching the user header.
-    Promoting these to a shared `IoctlCodes.h` is still a nice-to-have
-    but no longer load-bearing.)*
-  - ✅ Implement `IOCTL_HONEYPOT_HANDSHAKE` in the driver. *(Done:
-    `ControlLayer.c:HandleHandshake` plus dispatcher case in
-    `FakeNetFilter.c`.)*
-  - ✅ Pick one config path. *(Done: `\??\C:\Release\honey.conf`.)*
-  - ✅ Commit a `KernelDriver\FakeNetFilter.vcxproj`. *(Done; a `.sln`
-    wrapper is still optional — `msbuild` on the `.vcxproj` directly
-    works.)*
-  - ✅ Fix `README.md` to reference `FakeNetFilter.sys`. *(Done.)*
-- **Medium-term (≤1 week)**:
+- **Already in place**:
+  - ✅ IOCTL tables in `HoneyPotControl.h` and `ControlLayer.h` are
+    reconciled (`ControlLayer.h` holds HANDSHAKE at 0x800 through
+    EXPORT_LOGS at 0x804, matching the user header). Promoting these to a
+    shared `IoctlCodes.h` is still a nice-to-have but not load-bearing.
+  - ✅ `IOCTL_HONEYPOT_HANDSHAKE` is implemented in the driver
+    (`ControlLayer.c:HandleHandshake` plus dispatcher case in
+    `FakeNetFilter.c`).
+  - ✅ One config path (`\??\C:\Release\honey.conf`), consistent across
+    `ControlLayer.h`, `config/honey.conf`, README/BUILD.md, and the
+    unload-time export in `LoggingLayer.c`.
+  - ✅ `KernelDriver\FakeNetFilter.vcxproj` is committed; a `.sln` wrapper
+    is still optional — `msbuild` on the `.vcxproj` directly works.
+  - ✅ `README.md` consistently references `FakeNetFilter.sys`.
+  - ✅ A cross-platform `pytest` suite + GitHub Actions CI build/smoke the
+    user-mode app and check repo structure.
+- **Not done, by design**:
   - Replace the XOR placeholder in `LoggingLayer.c` with Windows CNG
     AES-XTS (`BCryptOpenAlgorithmProvider(BCRYPT_XTS_AES_ALGORITHM)`).
-    *(Assessed 2026-06-10 — deliberately NOT done here.* This is
-    kernel-mode crypto that needs a WDK build and a privileged kernel VM
-    to compile and validate; writing it blind would ship unverifiable
-    kernel code, which is worse than the honest, clearly-labelled
-    placeholder. The same applies to the CNN classifier and the
-    `RemoteUpdate*` covert channel in the long-term list below. What
-    *was* done: `tests/test_placeholder_honesty.py` now pins the
-    disclosure comments ("NOT cryptographically secure", the
-    disassembler/CNN/remote-update placeholder notes) so the weak
-    implementations can never be silently relabelled as production-grade
-    — a regression the kernel build alone would not catch.)*
-  - **PARTIALLY DONE 2026-06-10** — a cross-platform `pytest` suite +
-    GitHub Actions CI now build/smoke the user-mode app and check
-    structure. A PowerShell harness (`tests\Verify.ps1`) that runs §2.3
-    end-to-end and asserts A1–A9 on a privileged VM is still the
-    remaining piece for the full kernel-side flow.
-  - ~~Add a `.gitignore` rule for `x64/`, `*.sys.pdb`, `*.obj`.~~
-    **Already covered** — `.gitignore` ignores `x64/`, `*.pdb`
-    (covers `*.sys.pdb`), and `*.obj`; Python cache rules added
-    2026-06-10 for `tests/`.
+    Deliberately not attempted here: this is kernel-mode crypto that needs
+    a WDK build and a privileged kernel VM to compile and validate;
+    writing it blind would ship unverifiable kernel code, which is worse
+    than the honest, clearly-labelled placeholder. The same applies to the
+    CNN classifier and the `RemoteUpdate*` covert channel below.
+    `tests/test_placeholder_honesty.py` pins the disclosure comments ("NOT
+    cryptographically secure", the disassembler/CNN/remote-update
+    placeholder notes) so the weak implementations can never be silently
+    relabelled as production-grade — a regression the kernel build alone
+    would not catch.
+- **Not done yet**:
+  - Wire up the inline hooks in `TriggerLayer.c` (resolve
+    `NtOpenProcess`/`ZwQuerySystemInformation` addresses, call
+    `InstallInlineHook` from `InitializeTriggerLayer`, fix the hook stubs
+    to call through to the original function, add cross-CPU
+    synchronization). See §2.1/§2.2 A6 and the "Kernel-test readiness"
+    prerequisites this implies (PatchGuard mitigation in particular).
+  - A PowerShell harness (`tests\Verify.ps1`) that runs §2.3 end-to-end
+    and asserts A1–A9 on a privileged VM. The §2.3 manual recipe remains
+    the path for the full kernel-side flow until this exists.
+  - `.gitignore` already covers `x64/`, `*.pdb` (covers `*.sys.pdb`),
+    `*.obj`, and Python cache rules for `tests/`.
 - **Long-term**:
   - Replace inline hooks with a Windows-supported mechanism
     (KMDF callouts, ETW Threat-Intelligence, or
@@ -320,9 +327,9 @@ python -m pytest tests/ -v
 | Check | Status | Notes |
 |-------|--------|-------|
 | README documents build | ✅ | `README.md` §Building references `BUILD.md`; BUILD.md gives three methods, all three are now actually viable. |
-| Build files present | ✅ | `UserModeApp\HoneyPotControl.vcxproj` ✅; `KernelDriver\FakeNetFilter.vcxproj` ✅ (committed 2026-05-14); `KernelDriver\sources` ✅. All three build paths documented in BUILD.md now have backing build files. |
-| Build files internally consistent | ✅ | (a) IOCTL codes in `HoneyPotControl.h` and `ControlLayer.h` are aligned byte-for-byte (HANDSHAKE 0x800 → EXPORT_LOGS 0x804) — fixed 2026-05-14. (b) Every doc references `FakeNetFilter.sys`; the legacy `krnlhoneypot.sys` string was scrubbed from `README.md`. (c) `ControlLayer.h:CONFIG_FILE_PATH` (`\??\C:\Release\honey.conf`) matches the README/BUILD install step. |
+| Build files present | ✅ | `UserModeApp\HoneyPotControl.vcxproj` ✅; `KernelDriver\FakeNetFilter.vcxproj` ✅; `KernelDriver\sources` ✅. All three build paths documented in BUILD.md have backing build files. |
+| Build files internally consistent | ✅ | (a) IOCTL codes in `HoneyPotControl.h` and `ControlLayer.h` are aligned byte-for-byte (HANDSHAKE 0x800 → EXPORT_LOGS 0x804). (b) Every doc references `FakeNetFilter.sys`. (c) `ControlLayer.h:CONFIG_FILE_PATH` (`\??\C:\Release\honey.conf`) matches the README/BUILD install step and `config/honey.conf`'s own header comment. |
 | Source structure matches README | ✅ | The six layers named in README §Architecture each have matching `<Name>Layer.c/.h` in `KernelDriver/`, and all six (plus `FakeNetFilter.c`) are enumerated as `<ClCompile>` entries in `FakeNetFilter.vcxproj`. |
-| Tests exist | ✅ | `tests/` (pytest): `test_structure.py` (six layers + vcxproj/source sync) and `test_cli_smoke.py` (`HoneyPotControl.exe help`). 20 passed / 2 skipped locally (CLI rows skip without a build). Full kernel A1–A9 still needs a privileged VM. |
+| Tests exist | ✅ | `tests/` (pytest): `test_structure.py` (six layers + vcxproj/source sync) and `test_cli_smoke.py` (`HoneyPotControl.exe help`). 24 passed / 2 skipped locally (CLI rows skip without a build). Full kernel A1–A9 still needs a privileged VM. |
 | Test invocation documented | ✅ | §2.4 documents `python -m pytest tests/ -v`; CI (`.github/workflows/ci.yml`, `windows-latest`) builds the app, smoke-tests `help`, and runs pytest. The §2.3 manual recipe remains for the privileged kernel path. |
 | Output artifacts named in build files | ✅ | Driver: `FakeNetFilter.vcxproj` sets explicit `TargetName=FakeNetFilter` + `TargetExt=.sys` (also corroborated by `sources:TARGETNAME=FakeNetFilter`). App: `HoneyPotControl.vcxproj` still relies on `RootNamespace` for the basename — minor cosmetic fragility but works. |

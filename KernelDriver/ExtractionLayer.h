@@ -65,6 +65,11 @@ typedef struct _EXTRACTION_LAYER_STATE {
 // Function declarations
 NTSTATUS InitializeExtractionLayer(VOID);
 VOID CleanupExtractionLayer(VOID);
+// NOTE: DisassemblePayload / AnalyzeHeapSpray / AnalyzeROPChain /
+// AnalyzeSyscallAbuse / ClassifyBehavior have NO CALL SITES anywhere in this
+// driver -- nothing feeds them real attacker data (the syscall hooks that
+// would are themselves never installed; see TriggerLayer.c). Kept as
+// library-style functions for future wiring; see ExtractionLayer.c.
 NTSTATUS DisassemblePayload(PVOID PayloadAddress, ULONG PayloadSize, PPAYLOAD_ANALYSIS Analysis);
 NTSTATUS FingerprintExploit(PVOID PatternAddress, ULONG PatternSize, EXPLOIT_TYPE ExploitType, PEXPLOIT_FINGERPRINT Fingerprint);
 NTSTATUS AnalyzeHeapSpray(PVOID MemoryRegion, SIZE_T RegionSize);
