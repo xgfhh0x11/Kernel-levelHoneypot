@@ -27,7 +27,7 @@ if (-not $msbuild) { $msbuild = (Get-Command msbuild.exe -ErrorAction SilentlyCo
 if (-not $msbuild) { Write-Error 'msbuild.exe not found (install VS + WDK build tools).'; exit 2 }
 
 $args = @($proj, "/p:Configuration=$Configuration", "/p:Platform=$Platform", '/nologo', '/v:minimal')
-if ($TestCertificateThumbprint) { $args += "/p:SignToolCertificateThumbprint=$TestCertificateThumbprint" }
+if ($TestCertificateThumbprint) { $args += "/p:TestCertificate=$TestCertificateThumbprint" }
 $log = Join-Path $PSScriptRoot 'build.log'
 $args += @('/fl', "/flp:logfile=$log;verbosity=normal")
 Write-Host "[build] msbuild: $msbuild"

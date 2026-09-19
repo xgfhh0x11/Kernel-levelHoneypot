@@ -15,7 +15,7 @@
     <TemplateGuid>{B53146FA-082D-40E4-9923-0E0006B067EF}</TemplateGuid>
     <Keyword>KMDriver</Keyword>
     <RootNamespace>FakeNetFilter</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
     <ProjectName>FakeNetFilter</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -24,11 +24,13 @@
     <WDKVersion Condition="'$(WDKVersion)'==''">10.0.26100.0</WDKVersion>
     <WDKBuildRoot Condition="'$(WDKBuildRoot)'==''">$(WDKRoot)\build\$(WDKVersion)\</WDKBuildRoot>
     <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)'==''">10.0.26100.0</WindowsTargetPlatformVersion>
+    <TargetPlatformVersion_CO Condition="'$(TargetPlatformVersion_CO)'==''">10.0.26100.0</TargetPlatformVersion_CO>
+    <TargetPlatformVersion_NI Condition="'$(TargetPlatformVersion_NI)'==''">10.0.26100.0</TargetPlatformVersion_NI>
     <SkipValidateNTTargetVersion>true</SkipValidateNTTargetVersion>
     <MatchingSdkPresent>true</MatchingSdkPresent>
     <MatchingWdkPresent>true</MatchingWdkPresent>
+    <TargetPlatformVersion_FE>10.0.26100.0</TargetPlatformVersion_FE>
   </PropertyGroup>
-  <Import Project="$(WDKBuildRoot)WindowsDriver.common.props" Condition="exists('$(WDKBuildRoot)WindowsDriver.common.props')" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -61,23 +63,25 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WppEnabled>false</WppEnabled>
-      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;$(WDKRoot)\Include\wdf\kmdf\1.35;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>DBG=1;_AMD64_=1;AMD64=1;_KERNEL_MODE=1;WINNT=1;_WIN32_WINNT=0x0A00;NTDDI_VERSION=0x0A00000C;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;$(WDKRoot)\Lib\wdf\kmdf\x64\1.35;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WppEnabled>false</WppEnabled>
-      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <AdditionalIncludeDirectories>$(WDKRoot)\Include\$(WDKVersion)\km;$(WDKRoot)\Include\$(WDKVersion)\shared;$(WDKRoot)\Include\wdf\kmdf\1.35;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_AMD64_=1;AMD64=1;_KERNEL_MODE=1;WINNT=1;_WIN32_WINNT=0x0A00;NTDDI_VERSION=0x0A00000C;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>ntstrsafe.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WDKRoot)\Lib\$(WDKVersion)\km\x64;$(WDKRoot)\Lib\wdf\kmdf\x64\1.35;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -120,8 +124,27 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
-  <Import Project="$(WDKBuildRoot)WindowsDriver.common.targets" Condition="exists('$(WDKBuildRoot)WindowsDriver.common.targets')" />
+  <ItemDefinitionGroup>
+    <DriverSign>
+      <AdditionalOptions>/fd sha256 %(AdditionalOptions)</AdditionalOptions>
+    </DriverSign>
+  </ItemDefinitionGroup>
+  <Choose>
+    <When Condition="'$(TestCertificate)' != ''">
+      <PropertyGroup Label="Signing">
+        <SignMode>TestSign</SignMode>
+        <GenerateTestCertificate>false</GenerateTestCertificate>
+      </PropertyGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup Label="Signing">
+        <SignMode>TestSign</SignMode>
+        <GenerateTestCertificate>true</GenerateTestCertificate>
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
   <Target Name="ValidateNTTargetVersion" Condition="'$(SkipValidateNTTargetVersion)' != 'true'" />
+  <Target Name="Telemetry" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
